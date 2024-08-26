@@ -1,16 +1,14 @@
 with articles as
 (select
 platform,
-  date(date_time) as read_time,
-  CONCAT(post_visid_high, post_visid_low) AS unique_id,
-  post_prop20 AS article_id,
-  post_evar3 as encrypted_id,
-  CONCAT(post_visid_high, '-', post_visid_low, '-', visit_num, '-', visit_start_time_gmt) AS visit_id,
-  --visit_num,
-  --case when visit_num = '1' then 0 else 1 end as return_visit,
-  IF((REGEXP_CONTAINS(post_prop27, 'subscriber|sub_yes') or REGEXP_CONTAINS(post_evar26, 'subscriber|sub_yes')), 'subscriber', 'non-subscriber') AS sub_status,
-  post_prop2 as site_section, 
-  case when post_prop1 = 'ResearchTools' then 'Market Data' 
+date(date_time) as read_time,
+CONCAT(post_visid_high, post_visid_low) AS unique_id,
+  --post_prop20 AS article_id,
+  --post_evar3 as encrypted_id,
+count(distinct CONCAT(post_visid_high, '-', post_visid_low, '-', visit_num, '-', visit_start_time_gmt)) AS visits,
+IF((REGEXP_CONTAINS(post_prop27, 'subscriber|sub_yes') or REGEXP_CONTAINS(post_evar26, 'subscriber|sub_yes')), 'subscriber', 'non-subscriber') AS sub_status,
+post_prop2 as site_section, 
+case when post_prop1 = 'ResearchTools' then 'Market Data' 
   when post_prop1 = 'Home' then 'Home Page' else post_prop1
   end as content_type
 FROM (
@@ -39,35 +37,31 @@ OR username = 'djappmarketwatch')
 --and post_prop2 like 'MW_%'
 --AND NOT (REGEXP_CONTAINS(post_prop2, 'Error|Login'))
 and post_prop2 in ('MW_Company Research', 'MW_Personal Finance', 'MW_Industries', 'MW_Picks','MW_Retirement', 'MW_Home Page', 'MW_Markets', 'MW_Economy & Politics', 'MW_Investing', 'MW_Collection', 'MW_News')
-),
 
-reading_habit as
-(select
+group by 
+platform,
 read_time,
 unique_id,
-count(distinct visit_id) as visits
-from articles
-where sub_status = 'subscriber'
-group by 1,2
+site_section,
+content_type,
+sub_status
 )
+
 
 select
 platform,
-EXTRACT(year FROM TIMESTAMP(articles.read_time)) AS year,
-EXTRACT(month FROM TIMESTAMP(articles.read_time)) AS month,
+EXTRACT(year FROM TIMESTAMP(read_time)) AS year,
+EXTRACT(month FROM TIMESTAMP(read_time)) AS month,
 site_section,
 content_type,
-count(distinct articles.unique_id) as visitors,
---count(distinct if(sub_status = 'non-subscriber', unique_id, null)) as non_subscribers,
-COUNT(DISTINCT IF (reading_habit.visits >= 4, reading_habit.unique_id, NULL)) AS super_user,
-COUNT(DISTINCT IF (reading_habit.visits < 4, reading_habit.unique_id, NULL)) AS casual_user,
+count(distinct if(sub_status = 'subscriber', unique_id, null)) as subscribers,
+--sub_status,
+--unique_id,
+count(distinct if(sub_status = 'non-subscriber', unique_id, null)) as non_subscribers,
+count(distinct IF(sub_status = 'subscriber' and visits >= 4, unique_id, null)) as super_user,
+COUNT(DISTINCT IF(sub_status = 'subscriber' and visits < 4, unique_id, NULL)) AS casual_user
+
 from articles
-
-LEFT JOIN reading_habit
-on articles.unique_id = reading_habit.unique_id
-and articles.read_time = reading_habit.read_time
-
---where articles.platform = 'Web'
 
 group by
 platform,
@@ -75,5 +69,8 @@ year,
 month,
 site_section,
 content_type
+having (content_type IS NOT NULL
+or content_type != '')
 
-order by 1,2,3,visitors DESC
+order by 1,2,3,non_subscribers DESC
+--limit 100
