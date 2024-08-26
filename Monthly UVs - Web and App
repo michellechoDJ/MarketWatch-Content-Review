@@ -1,0 +1,191 @@
+with articles as
+(select
+platform,
+EXTRACT(year FROM TIMESTAMP(date_time)) AS year,
+  EXTRACT(month FROM TIMESTAMP(date_time)) AS month,
+  date(date_time) as read_time,
+  extract(hour from timestamp(date_time)) as hour_of_day,
+  CONCAT(post_visid_high, post_visid_low) AS unique_id,
+  case when post_prop20 like 'WP%' then post_prop20 else NULL end as article_id,
+  post_evar3 as encrypted_id,
+  CONCAT(post_visid_high, post_visid_low, visit_num) AS visit_id,
+  visit_num,
+  case when visit_num = '1' then 0 else 1 end as return_visit,
+  IF((REGEXP_CONTAINS(post_prop27, 'subscriber|sub_yes') or REGEXP_CONTAINS(post_evar26, 'subscriber|sub_yes')), 'subscriber', 'non-subscriber') AS sub_status,
+  post_prop2 as site_section, 
+  case when post_prop1 = 'ResearchTools' then 'Market Data' 
+  when post_prop1 = 'Home' then 'Home Page' else post_prop1
+  end as content_type,
+  case when geo_country = 'usa' then 'USA' else 'Non-USA' end as geo,
+  case WHEN prop10 like '%RHF%'
+OR REGEXP_CONTAINS(NET.REG_DOMAIN(visit_referrer), 'robinhood') THEN 'Robinhood'
+WHEN REGEXP_CONTAINS(NET.REG_DOMAIN(visit_referrer), 'goog|android.gm') THEN 'Google'
+WHEN NET.REG_DOMAIN(visit_referrer) = 'ampproject.org' THEN 'Google'
+WHEN NET.REG_DOMAIN(visit_referrer) = 'investors.com' THEN 'IBD'
+WHEN NET.REG_DOMAIN(visit_referrer) = 'newsbreakapp.com' THEN 'NewsBreak'
+WHEN NET.REG_DOMAIN(visit_referrer) = 'facebook.com' THEN 'Facebook'
+WHEN NET.REG_DOMAIN(visit_referrer) = 'mansionglobal.com' THEN 'Mansion Global'
+WHEN NET.REG_DOMAIN(visit_referrer) = 'realclearpolitics.com' THEN 'RealClearPolitics'
+WHEN NET.REG_DOMAIN(visit_referrer) = 't.co'
+OR REGEXP_CONTAINS(NET.REG_DOMAIN(visit_referrer), 'twitter') THEN 'Twitter'
+WHEN NET.REG_DOMAIN(visit_referrer) = 'linkedin.com' OR REGEXP_CONTAINS(NET.REG_DOMAIN(visit_referrer), 'lnkd') OR REGEXP_CONTAINS(NET.REG_DOMAIN(visit_referrer), 'linked') THEN 'LinkedIn'
+WHEN visit_referrer LIKE "%finance.yahoo%" THEN 'Yahoo Finance'
+WHEN REGEXP_CONTAINS(NET.REG_DOMAIN(visit_referrer), 'yahoo') THEN 'Yahoo'
+WHEN NET.REG_DOMAIN(visit_referrer) IS NULL
+OR NET.REG_DOMAIN(visit_referrer) = 'wsj.com' THEN 'Direct'
+WHEN NET.REG_DOMAIN(visit_referrer) = 'apple.news' THEN 'Apple News'
+WHEN NET.REG_DOMAIN(visit_referrer) = 'smartnews.com' THEN 'SmartNews'
+WHEN NET.REG_DOMAIN(visit_referrer) = 'snapchat.com' THEN 'Snapchat'
+WHEN NET.REG_DOMAIN(visit_referrer) = 'apple.com' THEN 'Apple Stocks'
+WHEN NET.REG_DOMAIN(visit_referrer) = 'marketwatch.com' THEN 'MarketWatch'
+WHEN NET.REG_DOMAIN(visit_referrer) = 'barrons.com' THEN "Barron's"
+WHEN NET.REG_DOMAIN(visit_referrer) = 'bing.com' THEN 'Bing'
+WHEN NET.REG_DOMAIN(visit_referrer) = 'msn.com' THEN 'MSN'
+WHEN NET.REG_DOMAIN(visit_referrer) = 'reddit.com' THEN 'Reddit'
+WHEN NET.REG_DOMAIN(visit_referrer) = 'instagram.com' THEN 'Instagram'
+WHEN NET.REG_DOMAIN(visit_referrer) = 'flipboard.com' THEN 'Flipboard'
+WHEN NET.REG_DOMAIN(visit_referrer) = 'youtube.com' THEN 'YouTube'
+WHEN prop10 LIKE '%cashapprss%' THEN 'Cash App'
+WHEN NET.REG_DOMAIN(visit_referrer) LIKE '%drudge%' THEN 'Drudge Report'
+WHEN prop10 LIKE '%wsj_taboola_rss%' THEN 'Taboola News'
+WHEN prop10 LIKE '%WSJ_Euronews%' THEN 'Euronews'
+WHEN NET.REG_DOMAIN(visit_referrer) IS NULL THEN 'wsj.com'
+ELSE
+NET.REG_DOMAIN(visit_referrer)
+END
+AS referrer
+FROM (
+SELECT
+*, "Web" as platform,
+FROM
+`djomniture.cipomniture_djglobal.*`
+WHERE
+REGEXP_CONTAINS(_TABLE_SUFFIX,r'^\d{4}$*')
+AND SAFE_CAST(CONCAT(SUBSTR(_TABLE_SUFFIX,1,4),'-',SUBSTR(_TABLE_SUFFIX,-2),'-','01') AS DATE) >= "2024-01-01"
+UNION ALL
+SELECT
+*, "App" as platform
+FROM
+`djomniture.cipomniture_djappmarketwatch.*`
+WHERE
+REGEXP_CONTAINS(_TABLE_SUFFIX,r'^\d{4}$*')
+AND SAFE_CAST(CONCAT(SUBSTR(_TABLE_SUFFIX,1,4),'-',SUBSTR(_TABLE_SUFFIX,-2),'-','01') AS DATE) >= "2024-01-01")
+WHERE
+post_page_event = '0'
+and SAFE_CAST(exclude_hit AS INT64) <= 0
+AND hit_source NOT IN ('5', '7',
+'8',
+'9') 
+AND (channel = 'MarketWatch'
+OR username = 'djappmarketwatch') 
+and post_prop2 in ('MW_Company Research', 'MW_Personal Finance', 'MW_Industries', 'MW_Picks',
+'MW_Retirement', 'MW_Home Page', 'MW_Markets', 'MW_Economy & Politics', 'MW_Investing', 'MW_Collection')
+and date(date_time) <= '2024-06-30'
+      
+),
+
+sales as
+(SELECT
+  date(date_time) as subscribe_time,
+  CONCAT(post_visid_high, post_visid_low) AS unique_id,
+  CONCAT(post_visid_high, post_visid_low, visit_num) AS visit_id,
+  visit_num,
+  post_purchaseid
+        FROM
+          `djomniture.cipomniture_djglobal.*`
+        WHERE
+          REGEXP_CONTAINS(_TABLE_SUFFIX,r'^\d{4}$*')
+          AND TIMESTAMP(CONCAT(SUBSTR(_TABLE_SUFFIX,1,4),'-',SUBSTR(_TABLE_SUFFIX,-2),'-','01')) >= TIMESTAMP('2023-07-01')
+          and SAFE_CAST(exclude_hit AS INT64) <= 0
+    AND hit_source NOT IN ('5',
+      '8',
+      '9')
+      AND REGEXP_CONTAINS(post_event_list, r'^1,|,1,|,1$')
+      and channel = 'MarketWatch'
+      and post_evar41 like 'Purchase%'
+
+UNION ALL 
+
+      SELECT
+  date(date_time) as subscribe_time,
+  CONCAT(post_visid_high, post_visid_low) AS unique_id,
+  CONCAT(post_visid_high, post_visid_low, visit_num) AS visit_id,
+  visit_num,
+  post_purchaseid
+  from(
+select *
+FROM
+          `djomniture.cipomniture_djglobal.*`
+        WHERE
+          REGEXP_CONTAINS(_TABLE_SUFFIX,r'^\d{4}$*')
+          AND TIMESTAMP(CONCAT(SUBSTR(_TABLE_SUFFIX,1,4),'-',SUBSTR(_TABLE_SUFFIX,-2),'-','01')) >= TIMESTAMP('2023-07-01')
+  union all
+  select *
+        FROM
+          `djomniture.cipomniture_djappmarketwatch.*`
+        WHERE
+          REGEXP_CONTAINS(_TABLE_SUFFIX,r'^\d{4}$*')
+          AND TIMESTAMP(CONCAT(SUBSTR(_TABLE_SUFFIX,1,4),'-',SUBSTR(_TABLE_SUFFIX,-2),'-','01')) >= TIMESTAMP('2024-01-01'))
+          where SAFE_CAST(exclude_hit AS INT64) <= 0
+    AND hit_source NOT IN ('5', '7',
+      '8',
+      '9')
+      AND REGEXP_CONTAINS(post_event_list, r'^1,|,1,|,1$')
+      and (channel = 'MarketWatch' or username = 'djdjappmarketwatch')
+      and post_evar41 like 'Purchase%'
+),
+
+
+engagement AS (
+SELECT
+*
+FROM
+`dj-users.wileyj.members_usage_*` AS usage
+WHERE
+REGEXP_CONTAINS(_TABLE_SUFFIX,r'^\d{4}_\d{2}$*')
+AND SAFE_CAST(CONCAT(SUBSTR(_TABLE_SUFFIX,1,4),'-',SUBSTR(_TABLE_SUFFIX,-2),'-','01') AS DATE) >= "2024-01-01"
+AND SAFE_CAST(subscriptionBeginDate AS DATE) < SAFE_CAST(snapshotDate AS DATE)
+AND (SAFE_CAST(subscriptionEndDate AS DATE) >= SAFE_CAST(snapshotDate AS DATE)
+OR subscriptionEndDate IS NULL))
+
+
+select
+platform,
+year,
+read_time,
+hour_of_day,
+articles.unique_id as unique_id,
+sub_status,
+--article_id,
+content_type,
+--encrypted_id,
+count(distinct articles.visit_id) as visits,
+return_visit as return_visit_flag,
+site_section, 
+post_purchaseid,
+case when referrer IN ('Instagram', 'Snapchat', 'Facebook', 'Linkedin', 'Twitter')  then 'Social' else referrer end as referral_source,
+if((sub_status = 'subscriber' AND activeDays >= 10), 'super_user', 'casual_user') as reading_habit
+from articles
+
+LEFT JOIN sales
+      ON articles.unique_id = sales.unique_id
+      AND articles.read_time < sales.subscribe_time
+      AND articles.visit_id = sales.visit_id
+
+LEFT JOIN engagement
+      ON articles.encrypted_id = engagement.VXID
+      AND DATE(articles.read_time) = DATE(engagement.snapshotDate)
+
+      group by
+      platform,
+year,
+read_time,
+hour_of_day,
+unique_id,
+sub_status,
+content_type,
+return_visit_flag,
+site_section, 
+post_purchaseid,
+referrer,
+reading_habit
